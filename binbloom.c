@@ -118,7 +118,10 @@ unsigned int read_file(char *name, unsigned char **mem) {
     unsigned char *ptr;
 
     fd = open(name, O_RDONLY);
-    assert(fd != -1);
+    if (fd == -1) {
+        printf("Can not open input file %s\n", name);
+        exit(-1);
+    }
     assert(0 == fstat(fd, &buf));
     *mem = malloc(buf.st_size + 1024);
     assert(mem != NULL);
@@ -343,12 +346,14 @@ void check_pointer(void) {
     }
     printf("%d\n", total_score_le);
 
-    if (total_score_le > total_score_be) {
+    if (total_score_le > total_score_be + total_score_be / 2) {
         endianness = B_LITTLE_ENDIAN;
         printf("This firmware seems to be LITTLE ENDIAN\n");
-    } else {
+    } else if (total_score_be > total_score_le + total_score_le / 2) {
         endianness = B_BIG_ENDIAN;
         printf("This firmware seems to be BIG ENDIAN\n");
+    } else {
+        printf("Scores for Big endian and Little endian are too close to determine the endianness.\n");
     }
 
 }
@@ -368,14 +373,12 @@ void count_pointers(unsigned int stride, unsigned int address) {
     unsigned int ptr, count, last_ptr, imax, countmax = 0;
     for (i = 0; i < nb_functions; i++) {
         ptr = (read32(address)) & 0xFFFFFFFE;
-        if (ptr == 0) break;
-        if (ptr == 0xFFFFFFFE) break;
+        if (ptr == 0) return;
+        if (ptr == 0xFFFFFFFE) return;
         loading_address = ptr - function_address[i];
 //        printf("At %08x, Ptr:%x, function(%d):%08x, Loading address:%08x\n", address, ptr, i, function_address[i], loading_address);
         if (ptr < function_address[i]) continue;
         count = 0;
-        ptr = (read32(address)) & 0xFFFFFFFE;
-        if ((ptr == 0) || (ptr == 0xFFFFFFFE)) continue;
         do {
             last_ptr = ptr;
             ptr = (read32(address + stride * (count + 1))) & 0xFFFFFFFE;
@@ -510,14 +513,23 @@ void load_functions(void) {
 }
 
 void usage(char *progname) {
-    printf("Usage: %s -f firmware.bin [-b] [-B base_address] [-e] [-E b] [-E l] [-u]\n", progname);
-    printf("\t -f firmware.bin: firmware to analyse\n");
-    printf("\t -b: compute the base address (need a list of functions in a \"functions\" file, in hex. See README.txt for instructions\n");
-    printf("\t -e: compute the endianness\n");
-    printf("\t -E: override the endianness computation. -E b for big endian, -E l for little endian\n");
-    printf("\t -v: display more results while computing the endianness\n");
-    printf("\t -u: search the UDS database\n");
-    printf("\t -B 0xaaaaaaaaaa: override the base address. To be used with -b\n");
+    printf(
+        "Usage: %s -f firmware.bin [-b] [-B base_address] [-e] [-E <b|l>] [-u] [-v]\n"
+        "         -f firmware.bin    firmware to analyse (mandatory)\n"
+        "         -u                 search a UDS database\n"
+        "         -e                 infer the endianness\n"
+        "         -E                 override the endianness computation. -E b for big endian, -E l for little endian\n"
+        "         -b                 infer the base address (need a list of functions in a \"functions\" file, in hex. See README.txt for instructions)\n"
+        "         -B 0xaaaaaaaa      override the base address. To be used with -b\n"
+        "         -v                 verbose: display more results\n"
+        "\n\nExamples:\n"
+        "    binbloom -f firmware.bin -u : compute the address of the UDS database\n"
+        "    binbloom -f firmware.bin -e : compute the endianness\n"
+        "    binbloom -f firmware.bin -b : compute the base address, computes the endianness first\n"
+        "    binbloom -f firmware.bin -b -E <b|l> : compute the base address and specify the endianness, in case the automatic detection of the endianness is wrong, then write the .fad and .fpt files\n"
+        "    binbloom -f firmware.bin -B <base_address> [-E <b|l>] : write the .fad and .fpt files. Overrire the computation of the base address, and of the endianness if -E is specified\n"
+    , progname);
+
     exit(-1);
 }
 
@@ -563,7 +575,9 @@ int main(int argc, char **argv) {
                 }
                 break;
             default:
-                abort();
+                printf("Invalid argument.\n\n");
+                usage(argv[0]);
+                exit(1);
         }
 
 
